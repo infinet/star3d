@@ -9,7 +9,7 @@
  * Matplotlib: tested working on matplotlib 1.1.1rc2, higher version should also
  work.
 
- * It need data from the [star names cross index](ftp://cdsarc.u-strasbg.fr/cats/IV/27A/catalog.dat) and the [Hipparcos catalog](ftp://cdsarc.u-strasbg.fr/cats/I/311/hip2.dat.gz). Dowload these two files and place under `data` directory.
+ * It need data from the star names cross index(ftp://cdsarc.u-strasbg.fr/cats/IV/27A/catalog.dat) and the Hipparcos catalog(ftp://cdsarc.u-strasbg.fr/cats/I/311/hip2.dat.gz). Dowload these two files and place under `data` directory.
 
 
 ## How to run
