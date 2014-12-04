@@ -5,12 +5,6 @@ import os
 import sqlite3
 from math import sin, cos, pow
 
-import matplotlib
-font = {'size': 10}
-matplotlib.rc('font', **font)
-#matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 APPDIR = os.path.abspath(os.path.dirname(__file__))
 DATADIR = 'data'
@@ -30,7 +24,6 @@ CONST_CN = os.path.join(APPDIR, 'constellation-cn.txt')
 PARSEC = 3.26156  # light years
 COLOR_THRESH = 0  # B-V index threshold for blue and red
 NAME_THRESH = 3.5  # show star name if brighter
-MAX = 2000  # MAX distance of star to plot
 
 
 def initdb():
@@ -205,7 +198,27 @@ def mag2size(mag):
     return 1 if s == 0 else s
 
 
-def plot_star3d(cst, mag=6.5):
+def plot_star3d(cst, mag=6.5, output='screen', max_dist=1000):
+    '''
+    Args:
+        cst: constellation IAU abbreviation
+        mag: magnitude
+        output: choose between screen and image
+        max_dist: maximum distance of star to plot, default 1000 light years
+    '''
+
+    import matplotlib
+    font = {'size': 10}
+    matplotlib.rc('font', **font)
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+
+    if output == 'screen':
+        fig = plt.figure()
+    else:
+        matplotlib.use('Agg')
+        fig = plt.figure(figsize=(10, 7.5), dpi=75, linewidth=0.8)
+
     stars = find_constel(cst, mag)
     pnts = {}
     for s in stars:
@@ -215,7 +228,7 @@ def plot_star3d(cst, mag=6.5):
             continue
         if s['ly'] < 0:
             continue
-        if s['ly'] > MAX:
+        if s['ly'] > max_dist:
             continue
 
         tmp = {}
@@ -233,9 +246,7 @@ def plot_star3d(cst, mag=6.5):
         #                                    s['mag'], s['ly'], tmp['size'])
         pnts[s['hip']] = tmp
 
-    print 'ploting %d objects' % len(pnts.keys())
-    fig = plt.figure()
-    #fig = plt.figure(figsize=(10, 7.5), dpi=75, linewidth=0.8)
+    print 'Plotting %d objects' % len(pnts.keys())
     ax = fig.gca(projection='3d')
     for k, v in pnts.iteritems():
         ax.scatter(v['xyz'][0], v['xyz'][1], v['xyz'][2],
@@ -249,20 +260,21 @@ def plot_star3d(cst, mag=6.5):
     ax.scatter(0, 0, 0, c='y', s=20)
     ax.text(0, 0, 0, 'Sun')
 
-    ax.set_xlim(0, MAX)
-    ax.set_ylim(0, MAX)
-    ax.set_zlim(-1 * MAX / 2, MAX / 2)
+    ax.set_xlim(0, max_dist)
+    ax.set_ylim(0, max_dist)
+    ax.set_zlim(-1 * max_dist / 2, max_dist / 2)
 
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
-    ax.text2D(0.03, 0.97, '%s Stars closer than %d light years' % (cst, MAX),
+    ax.text2D(0.03, 0.97, '%s Stars closer than %d light years' % (cst, max_dist),
             transform=ax.transAxes)
-    plt.show()
 
-    return  # do not generate output image
+    if output == 'screen':
+        plt.show()
+        return  # do not generate output image
 
-    STEP = 3
+    STEP = 10
     for n in range(0, 170, STEP):
         angle = 190 + n
         ax.view_init(0, angle)
@@ -319,7 +331,15 @@ def main():
     sel = raw_input('Select Constellation Number: ')
     sel = int(sel)
     cst = d[sel]
-    plot_star3d(cst)
+
+    sel = raw_input('Limit maximum distance of stars to [Default '
+            '1000 light years]: ')
+    try:
+        dist = int(sel)
+    except ValueError:
+        dist = 1000
+    print 'Plotting stars closer than %d light years' % dist
+    plot_star3d(cst, mag=6.5, output='screen', max_dist=dist)
 
 
 if __name__ == "__main__":
