@@ -2,21 +2,28 @@
 # -*- coding: utf-8 -*-
 
 import os
+import ftplib
+import gzip
+import hashlib
 import sqlite3
 from math import sin, cos, pow
 
-
 APPDIR = os.path.abspath(os.path.dirname(__file__))
-DATADIR = 'data'
-DB_FILE = os.path.join(APPDIR, DATADIR, 'cross.sqlite')
+DB_DIR = os.path.join(APPDIR, 'data')
+DB_FILE = os.path.join(APPDIR, 'star3d.sqlite')
 
 # IV/27A     HD-DM-GC-HR-HIP-Bayer-Flamsteed Cross Index    (Kostjuk, 2002)
-# ftp://cdsarc.u-strasbg.fr/cats/IV/27A/catalog.dat
-CATALOG = os.path.join(APPDIR, DATADIR, 'catalog.dat')
-
 # I/311      Hipparcos, the New Reduction       (van Leeuwen, 2007)
-# ftp://cdsarc.u-strasbg.fr/cats/I/311/hip2.dat.gz
-HIP2 = os.path.join(APPDIR, DATADIR, 'hip2.dat')
+urls = {
+'crossindex': {'url': 'ftp://cdsarc.u-strasbg.fr/cats/IV/27A/catalog.dat',
+               'desc': 'HD-DM-GC-HR-HIP-Bayer-Flamsteed Cross Index',
+               'sha1sum': 'e7771854cacf410ffb3065811295755f1aaffd70',
+               'local': os.path.join(DB_DIR, 'catalog.dat')},
+'hip2':  {'url': 'ftp://cdsarc.u-strasbg.fr/cats/I/311/hip2.dat.gz',
+          'desc': 'Hipparcos',
+          'sha1sum': '854e7a65f40f7e7beb8c54f3ba60de9ab2a8cb54',
+          'local': os.path.join(DB_DIR, 'hip2.dat.gz')}
+}
 
 # IAU constellations
 CONST_CN = os.path.join(APPDIR, 'constellation-cn.txt')
@@ -26,21 +33,50 @@ COLOR_THRESH = 0  # B-V index threshold for blue and red
 NAME_THRESH = 3.5  # show star name if brighter
 
 
+def ftp_get(url, output):
+    if url.startswith('ftp://'):
+        tmp = url[6:].split('/')
+    else:
+        tmp = url.split('/')
+    host = tmp[0]
+    fname = tmp[-1]
+    path = '/'.join(tmp[1:-1])
+    ftp = ftplib.FTP(host)
+    ftp.login()
+    ftp.cwd(path)
+    with open(output, 'wb') as fp:
+        ftp.retrbinary('RETR %s' % fname, fp.write)
+    ftp.quit()
+
+
+def verify_file(fname, sha1):
+    ''' verify file's sha1sum, return True when match'''
+    h = hashlib.new('sha1')
+    content = open(fname).read()
+    h.update(content)
+    if sha1 == h.hexdigest():
+        return True
+    else:
+        return False
+
+
 def initdb():
     if os.path.exists(DB_FILE):
         return  # the database already generate, do nothing
 
-    if not os.path.exists(CATALOG):
-        print ("Can't find star names cross index. Please download it from "
-               "ftp://cdsarc.u-strasbg.fr/cats/IV/27A/catalog.dat, "
-               "save it to %s" % CATALOG)
-        exit(2)
+    if not os.path.exists(DB_DIR):
+        os.mkdir(DB_DIR)
 
-    if not os.path.exists(HIP2):
-        print ("Can't find Hipparcos catalog. Please download it from "
-               "ftp://cdsarc.u-strasbg.fr/cats/I/311/hip2.dat.gz, "
-               "uncompress it and save to %s" % HIP2)
-        exit(2)
+    for k,v in urls.iteritems():
+        if not os.path.exists(v['local']):
+            print "Can't find %s. Begin download from %s" % (v['desc'],
+                                                             v['url'])
+            ftp_get(v['url'], v['local'])
+
+        if not verify_file(v['local'], v['sha1sum']):
+            print 'sha1sum does NOT match, remove %s and try again' % v['local']
+            exit(2)
+
 
     conn = sqlite3.connect(DB_FILE)
     sql = '''
@@ -111,7 +147,9 @@ def fortran_read(lines, fmt):
 def read_hip2():
     # format for Readme of I/311
     HIP2_FMT = 'I6,1X,I3,1X,I1,1X,I1,1X,F13.10,1X,F13.10,1X,F7.2,1X,F8.2,1X,F8.2,1X,F6.2,1X,F6.2,1X,F6.2,1X,F6.2,1X,F6.2,1X,I3,1X,F5.2,1X,I2,1X,F6.1,1X,I4,1X,F7.4,1X,F6.4,1X,F5.3,1X,I1,1X,F6.3,1X,F5.3,1X,F6.3,1X,15F7.2'
-    fp = open(HIP2)
+    target = urls['hip2']
+    print 'Reading %s into database' % target['desc']
+    fp = gzip.open(target['local'])
     farray = fortran_read(fp, HIP2_FMT)
 
     conn = sqlite3.connect(DB_FILE)
@@ -136,7 +174,9 @@ def read_hip2():
 
 def read_constel():
     CAT_FMT = 'I6,1X,A12,1X,I5,1X,I4,1X,I6,1X,2I2,F5.2,1X,A1,2I2,F4.1,1X,F5.2,1X,I3,1X,A5,1X,A3'
-    fp = open(CATALOG)
+    target = urls['crossindex']
+    print 'Reading %s into database' % target['desc']
+    fp = open(target['local'])
     farray = fortran_read(fp, CAT_FMT)
 
     conn = sqlite3.connect(DB_FILE)
@@ -305,18 +345,30 @@ def find_constel(cst, mag=6.5):
     return res
 
 
-def show_constel():
+def show_constel(chn = False):
     conn = sqlite3.connect(DB_FILE)
     db = conn.cursor()
     sql = 'select id,fullname,chn,abr from constel_name order by id'
     db.execute(sql)
     rows = db.fetchall()
 
-    for i in xrange(44):
-        line = '%2d. %-22s %-10s  %2d. %-22s %-10s' % (
-            rows[i][0], rows[i][1], rows[i][2],
-            rows[i + 44][0], rows[i + 44][1], rows[i + 44][2])
-        print line
+    if chn:
+        for i in xrange(44):
+            line = '%2d. %-22s %-10s  %2d. %-22s %-10s' % (
+                rows[i][0], rows[i][1], rows[i][2],
+                rows[i + 44][0], rows[i + 44][1], rows[i + 44][2])
+            print line
+    else:
+        tmp = []
+        for i in xrange(88):
+            if (i + 1) % 3 == 0:
+                tmp.append('%2d. %-22s' % (rows[i][0], rows[i][1]))
+                print ' '.join(tmp)
+                tmp = []
+            else:
+                tmp.append('%2d. %-22s' % (rows[i][0], rows[i][1]))
+
+        print ' '.join(tmp)
 
     res = {}
     for r in rows:
